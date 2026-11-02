@@ -23,6 +23,8 @@ Each section explains a concept, shows you the relevant part of the format, and 
 
 When a task is the kind of thing you might get stuck on, it ends with a **Hint** you can read first and a pointer to the **Cheat sheet** at the end, which holds a working answer. Try the task before you look. The struggle is where the learning happens.
 
+Each task has a matching set of pseudocode tests in `TESTS.md`, next to your code. Write them before or alongside the code. They tell you exactly what each function must do.
+
 > **Note:** We aim for *ProTracker 2.x* behaviour. There are many MOD variants and many players disagree on edge cases. ProTracker is the closest thing to a reference, and most songs were written to sound right in it.
 
 > **Note:** The behaviour described here was checked against [pt2-clone](https://github.com/8bitbubsy/pt2-clone), a C port of the ProTracker 2.3D replayer, and against the original ProTracker format notes. Where players disagree, this guide follows ProTracker.
@@ -766,7 +768,7 @@ static const uint8_t SINE[32] = {
 ```
 
 - **Vibrato depth.** The amount added to the period is `SINE[pos & 31] * depth >> 7`, negated when `pos & 32` is set. For tremolo, shift by 6 instead of 7 and apply the result to the volume.
-- **Arpeggio needs semitones.** Find the base period in the `PERIODS` table and step `x` or `y` entries further along. If the period is not in the table, find the closest entry.
+- **Arpeggio needs semitones.** Find the base period in the `PERIODS` table and step `x` or `y` entries further along. If the period is not in the table, use the first entry that is not higher than it. That is what ProTracker does, and it is not always the nearest entry.
 - **Reset the vibrato position** when a new note triggers, so each note starts its wobble at the same point.
 - **Finetune** comes last. A sample's finetune shifts its pitch in steps of 1/8 of a semitone. The simplest correct-enough approach is to multiply the playback rate by 2^(finetune / 96) when you compute the step.
 
@@ -1129,11 +1131,10 @@ Small helpers shared by several effects:
 ```c
 static int clamp_i(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 
-static int closest_index(int period) {
-    int best = 0;
-    for (int i = 1; i < 36; i++)
-        if (abs(PERIODS[i] - period) < abs(PERIODS[best] - period)) best = i;
-    return best;
+static int arp_base_index(int period) {     // first entry not above the period
+    for (int i = 0; i < 36; i++)
+        if (period >= PERIODS[i]) return i;
+    return 35;
 }
 
 static void vol_slide(Channel *ch, uint8_t prm) {
@@ -1268,7 +1269,7 @@ static void modulate(Player *p, Channel *ch, int fx) {
     if (ch->effect == 0x0 && prm) {                              // arpeggio
         int semis = p->tick % 3 == 1 ? x : p->tick % 3 == 2 ? y : 0;
         if (semis && ch->period)
-            ch->out_period = PERIODS[clamp_i(closest_index(ch->period) + semis, 0, 35)];
+            ch->out_period = PERIODS[clamp_i(arp_base_index(ch->period) + semis, 0, 35)];
     }
     if (!fx) return;
     if (ch->effect == 0x4 || ch->effect == 0x6) {                // vibrato
