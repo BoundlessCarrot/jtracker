@@ -1,40 +1,10 @@
 const std = @import("std");
+const helpers = @import("helpers.zig");
+const types = @import("types.zig");
 
-const print = std.debug.print;
-
-const periods: [36]u16 = .{
-//   C    C#   D    D#   E    F    F#   G    G#   A    A#   B
-    856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480, 453, // octave 1
-    428, 404, 381, 360, 339, 320, 302, 285, 269, 254, 240, 226, // octave 2
-    214, 202, 190, 180, 170, 160, 151, 143, 135, 127, 120, 113, // octave 3
-};
-
-const Sample = struct {
-    name: [22]u8, // 22 chars (+ terminator?)
-    length: u32, // in bytes
-    finetune: i8, // -8..7
-    volume: u8, // 0..64
-    loop_start: u32, // in bytes
-    loop_length: u32, // in bytes, less than/equal to 2 means no loop
-    data: []const i8,
-};
-
-const Note = struct {
-    sample: u8, // 0 = none, 1..31
-    period: u16, // 0 = none
-    effect: u8, // 0x0..0xF
-    param: u8, // 0x00..0xFF
-};
-
-const Mod = struct {
-    title: [21]u8,
-    samples: [31]Sample,
-    song_length: u32, // unsure about the type here, in the guide it's just `int`
-    orders: [128]u8,
-    num_patterns: u32,
-    num_channels: u32,
-    notes: []Note, // num_patterns * 64 * num_channels
-};
+const Sample = types.Sample;
+const Note = types.Note;
+const Mod = types.Mod;
 
 /// Upper bound for a MOD file. 31 samples at the 128 KiB maximum
 /// plus 128 patterns is a little over 4 MiB, so this leaves headroom
@@ -141,56 +111,6 @@ pub fn modLoad(alloc: std.mem.Allocator, buf: []const u8) !Mod {
     return modHeader;
 }
 
-const noteNames: [12][]const u8 = .{
-    "C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"
-};
-
-fn periodIdx(period: u16) ?u16 {
-    for (0..36) |n| {
-        if (periods[n] == period) return @intCast(n);
-    }
-    return null;
-}
-
-fn printCell(note: Note) void {
-    if (note.period == 0) {
-        print("---", .{});
-    } else if (periodIdx(note.period)) |i| {
-        print("{s}{d}", .{ noteNames[i % 12], i / 12 + 1 });
-    } else {
-        print("???", .{});
-    }
-
-    if (note.sample != 0) {
-        print(" {X:02}", .{note.sample});
-    } else {
-        print(" --", .{});
-    }
-
-    if (note.effect != 0 or note.param != 0) {
-        print(" {X}{X:02}", .{note.effect, note.param});
-    } else {
-        print(" ---", .{});
-    }
-}
-
-fn modNote(m: Mod, pattern: usize, row: usize, ch: usize) Note {
-    return m.notes[(pattern * 64 + row) * m.num_channels + ch];
-}
-
-fn patternPrinter(header: Mod, pattern: usize) void {
-    for (0..64) |row| {
-        print("{d:02} ", .{row});
-        for (0..header.num_channels) |ch| {
-            print("| ", .{});
-            printCell(modNote(header, pattern, row, ch));
-            print(" ", .{});
-        }
-        print("\n", .{});
-    }
-}
-
-
 test "readModFile reads the file" {
     const gpa = std.testing.allocator;
     const buf = try readModFile(gpa, std.testing.io, "space_debris.mod");
@@ -235,5 +155,5 @@ test "modLoad parses space_debris.mod" {
     // One decoded cell
     try t.expectEqual(Note{ .sample = 1, .period = 320, .effect = 0xF, .param = 0x06 }, m.notes[0]);
 
-    patternPrinter(m, 1);
+    helpers.PrintModHelpers.patternPrinter(m, 1);
 }
